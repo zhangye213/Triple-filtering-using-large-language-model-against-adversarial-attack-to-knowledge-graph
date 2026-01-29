@@ -1,0 +1,888 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Faithful KG-RAG — Local Shards + Live Stream</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    /* =========================
+       Polished visual theme only
+       (HTML & JS left untouched)
+       ========================= */
+    :root{
+      --bg-deep:#0b1220;
+      --bg-card:rgba(23,31,50,.65);
+      --bd-card:rgba(255,255,255,.08);
+      --glow:#3b82f6;
+      --text-dim:#a6adbb;
+    }
+    body{
+      font-family:'Inter',sans-serif;
+      background:
+        radial-gradient(1200px 500px at 15% -10%, rgba(59,130,246,.15), transparent 60%),
+        radial-gradient(900px 400px at 85% -10%, rgba(34,197,94,.12), transparent 60%),
+        linear-gradient(180deg,#0a0f1a 0%, #0b1220 100%);
+      min-height:100vh;
+    }
+
+    /* container glass & soft border */
+    .w-full.max-w-7xl.mx-auto{
+      position:relative;
+      border-radius:1.25rem;
+      backdrop-filter:saturate(140%) blur(8px);
+      box-shadow:
+        0 10px 30px rgba(2,6,23,.45),
+        inset 0 1px 0 rgba(255,255,255,.04);
+    }
+    .w-full.max-w-7xl.mx-auto::before{
+      content:"";
+      position:absolute; inset:0;
+      border-radius:inherit;
+      padding:1px;
+      background:linear-gradient(180deg,rgba(255,255,255,.075),rgba(255,255,255,0));
+      -webkit-mask:
+        linear-gradient(#000 0 0) content-box, 
+        linear-gradient(#000 0 0);
+      -webkit-mask-composite: xor; mask-composite: exclude;
+      pointer-events:none;
+    }
+
+    /* heading glow */
+    header h1{
+      background:linear-gradient(90deg,#fff 0%, #a9c6ff 60%, #6aa7ff 100%);
+      -webkit-background-clip:text; background-clip:text;
+      color:transparent;
+      letter-spacing:.3px;
+    }
+    header p{ color:var(--text-dim); }
+
+    /* result / info cards (glass + border + hover lift) */
+    .result-card{
+      position:relative;
+      background:var(--bg-card) !important;
+      border:1px solid var(--bd-card) !important;
+      box-shadow:0 10px 24px rgba(2,6,23,.35), inset 0 1px 0 rgba(255,255,255,.04);
+      will-change:transform,box-shadow;
+      transition: all .45s cubic-bezier(.25,.8,.25,1);
+      opacity:0; transform: translateY(30px);
+    }
+    .result-card.show{ opacity:1; transform: translateY(0); }
+    .result-card:hover{
+      transform:translateY(-2px);
+      box-shadow:0 14px 32px rgba(2,6,23,.45), inset 0 1px 0 rgba(255,255,255,.05);
+    }
+
+    /* inputs & selects – consistent dark controls */
+    input[type="text"],
+    input[type="password"],
+    input[type="url"],
+    select{
+      background:rgba(13,19,33,.92) !important;
+      border:1px solid rgba(255,255,255,.08) !important;
+      color:#e5e7eb !important;
+      transition:border-color .2s, box-shadow .2s, transform .1s;
+    }
+    input::placeholder{ color:#8b95a7; }
+    input:focus, select:focus{
+      border-color:rgba(59,130,246,.55) !important;
+      box-shadow:0 0 0 4px rgba(59,130,246,.15);
+      outline:none;
+    }
+
+    /* directory picker button */
+    #dir-picker::file-selector-button{
+      border:0; border-radius:.6rem;
+      background:linear-gradient(135deg,#2563eb,#3b82f6);
+      color:#fff; font-weight:600;
+      padding:.55rem 1rem; margin-right:.75rem;
+      cursor:pointer;
+      box-shadow:0 6px 18px rgba(59,130,246,.35);
+      transition:transform .12s ease, box-shadow .2s ease, filter .2s;
+    }
+    #dir-picker::file-selector-button:hover{ transform:translateY(-1px); box-shadow:0 8px 22px rgba(59,130,246,.45); }
+    #dir-picker::file-selector-button:active{ transform:translateY(0); filter:saturate(.95); }
+
+    /* analyze button – gradient + glow */
+    #analyze-btn{
+      background:linear-gradient(135deg,#2563eb,#3b82f6) !important;
+      box-shadow:0 10px 26px rgba(59,130,246,.35), inset 0 1px 0 rgba(255,255,255,.06);
+      border:1px solid rgba(255,255,255,.06);
+    }
+    #analyze-btn:hover{ transform:translateY(-1px) scale(1.01); box-shadow:0 14px 32px rgba(59,130,246,.45); }
+    #analyze-btn:disabled{ opacity:.75; filter:grayscale(.1); box-shadow:none; }
+
+    /* secondary button */
+    #clear-thought-btn{
+      border:1px solid rgba(255,255,255,.08);
+      background:rgba(17,24,39,.6);
+      box-shadow:inset 0 1px 0 rgba(255,255,255,.04);
+      transition:background .2s, transform .1s, border-color .2s;
+    }
+    #clear-thought-btn:hover{
+      background:rgba(28,37,64,.85);
+      border-color:rgba(255,255,255,.12);
+      transform:translateY(-1px);
+    }
+
+    /* console-like input wrapper glow */
+    #question-input-wrapper{
+      border-color:rgba(255,255,255,.08) !important;
+      background:rgba(12,18,31,.85) !important;
+    }
+
+    /* status line */
+    #status{ color:#9aa4b2; }
+
+    /* thinking stream panel */
+    #think-stream{
+      background:rgba(10,16,28,.9) !important;
+      border:1px solid rgba(255,255,255,.08);
+      box-shadow:inset 0 1px 0 rgba(255,255,255,.03);
+    }
+    #think-status{ color:#9fb4ff; }
+
+    /* poisoned triple chip look */
+    #poisoned-triples li{
+      border:1px solid rgba(239,68,68,.25);
+      background:linear-gradient(180deg, rgba(239,68,68,.09), rgba(239,68,68,.05));
+    }
+
+    /* healed path hint */
+    #healed-rog-path{
+      display:inline-block;
+      padding:.35rem .55rem;
+      border-radius:.5rem;
+      background:rgba(40,60,95,.35);
+      border:1px solid rgba(255,255,255,.08);
+    }
+
+    /* nicer scrollbars */
+    *{ scrollbar-width:thin; scrollbar-color:#3b82f6 rgba(255,255,255,.06); }
+    *::-webkit-scrollbar{ height:10px; width:10px; }
+    *::-webkit-scrollbar-track{ background:rgba(255,255,255,.06); border-radius:10px; }
+    *::-webkit-scrollbar-thumb{
+      background:linear-gradient(180deg,#4f81ff,#2d5bff);
+      border-radius:10px;
+      border:2px solid rgba(12,18,31,.8);
+    }
+
+    .blinking-cursor{
+      width:8px; height:1.2rem; border-radius:2px;
+      background:#60a5fa;
+      box-shadow:0 0 8px rgba(96,165,250,.85);
+    }
+    .triple-poisoned{ border-left:3px solid #ef4444; }
+  </style>
+</head>
+<body class="bg-gray-900 text-gray-200 min-h-screen p-4 selection:bg-blue-500 selection:text-white">
+  <div class="w-full max-w-7xl mx-auto bg-gray-800/50 backdrop-blur-sm border border-gray-700 rounded-2xl shadow-2xl p-6 md:p-8 space-y-8">
+
+    <header class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+      <div>
+        <h1 class="text-3xl md:text-4xl font-bold text-white">Faithful KG-RAG</h1>
+        <p class="text-gray-400">Poisoning Defense & Attribution • Local Shards • Model switch • Live Thinking Stream</p>
+      </div>
+      <div class="flex flex-wrap gap-3 items-center">
+        <label class="text-sm text-gray-300">Model</label>
+        <select id="model-select" class="bg-gray-800 border border-gray-700 text-gray-100 rounded-lg px-3 py-2">
+          <option value="deepseek-chat">deepseek-chat (concise)</option>
+          <option value="deepseek-reasoner">deepseek-reasoner (chain-of-thought)</option>
+        </select>
+        <label class="text-sm text-gray-300">API Base</label>
+        <input id="api-base" class="bg-gray-800 border border-gray-700 text-gray-100 rounded-lg px-3 py-2 w-56" value="https://api.deepseek.com">
+      </div>
+    </header>
+
+    <section class="space-y-3">
+      <div class="flex flex-col md:flex-row gap-3 items-start md:items-center">
+        <label class="text-sm font-medium text-gray-300">Data directory</label>
+        <input id="dir-picker" type="file" webkitdirectory directory multiple
+               class="block text-sm text-gray-300 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-700">
+        <span id="picked-hint" class="text-xs text-gray-400">
+          Select a folder containing <span class="mono">poisoned_index.jsonl</span>, <span class="mono">clean_index.jsonl</span>,
+          <span class="mono">predictions_10_False.json[l]</span>, and shard folders <span class="mono">poisoned_shards/</span> &amp; <span class="mono">clean_shards/</span>.
+        </span>
+      </div>
+      <div id="load-status" class="text-sm text-gray-400"></div>
+    </section>
+
+    <section class="grid md:grid-cols-3 gap-4">
+      <div class="space-y-2">
+        <label for="api-key-input" class="block text-sm font-medium text-gray-300">DeepSeek API key</label>
+        <input id="api-key-input" type="password" placeholder="Enter your API key..."
+               class="w-full bg-gray-700 border border-gray-600 text-white rounded-lg p-3 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition">
+        <p class="text-xs text-gray-500">Tip: Prefer a backend proxy in production.</p>
+      </div>
+      <div class="space-y-2">
+        <label for="question-input" class="block text-sm font-medium text-gray-300">Question or ID (e.g., WebQTest-0)</label>
+        <div id="question-input-wrapper" class="flex items-center bg-gray-900 border border-gray-600 rounded-lg p-3 transition">
+          <span class="text-green-400 mr-2">$</span>
+          <input id="question-input" type="text" placeholder="e.g., what does jamaican people speak OR WebQTest-0"
+                 class="flex-grow bg-transparent text-white focus:outline-none">
+          <div class="blinking-cursor"></div>
+        </div>
+      </div>
+      <div class="space-y-2">
+        <label class="block text-sm font-medium text-gray-300">Options</label>
+        <div class="flex items-center gap-3">
+          <input id="stream-toggle" type="checkbox" class="h-4 w-4">
+          <label for="stream-toggle" class="text-sm text-gray-300">Live stream (if supported)</label>
+        </div>
+      </div>
+    </section>
+
+    <section class="flex flex-wrap items-center gap-3">
+      <button id="analyze-btn"
+              class="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg transition-transform transform hover:scale-105 focus:outline-none focus:ring-4 focus:ring-blue-800 disabled:bg-blue-800 disabled:cursor-not-allowed">
+        Analyze
+      </button>
+      <button id="clear-thought-btn" class="px-4 py-3 bg-gray-700 hover:bg-gray-600 rounded-lg text-sm">Clear Thinking Stream</button>
+      <div id="status" class="text-sm text-gray-400 ml-auto"></div>
+    </section>
+
+    <section id="think-card" class="result-card bg-gray-700/50 p-5 rounded-lg">
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="text-xl font-semibold text-white">Thinking Stream</h2>
+        <div id="think-status" class="text-sm text-gray-400">Idle</div>
+      </div>
+      <pre id="think-stream" class="mono text-sm bg-gray-900/60 p-4 rounded-md max-h-72 overflow-auto whitespace-pre-wrap"></pre>
+    </section>
+
+    <section id="results" class="space-y-8 hidden">
+      <div id="matched-question-card" class="result-card bg-gray-700/50 p-6 rounded-lg">
+        <h2 class="text-xl font-semibold text-white mb-3">Matched Dataset Question</h2>
+        <p id="matched-question-text" class="text-gray-300"></p>
+      </div>
+
+      <div class="grid md:grid-cols-3 gap-6">
+        <div id="our-system-card" class="result-card bg-gray-700/50 p-6 rounded-lg border border-blue-500">
+          <h2 class="text-xl font-semibold text-white mb-3">Our System (Faithful KG-RAG)</h2>
+          <p class="text-sm text-gray-400 mb-2">Final Answer:</p>
+          <p id="final-answer" class="text-2xl font-bold text-green-400 mb-4"></p>
+          <h3 class="text-lg font-semibold text-white mb-2">Detected Poisoned Triples:</h3>
+          <ul id="poisoned-triples" class="space-y-2 max-h-48 overflow-y-auto"></ul>
+        </div>
+
+        <div id="healed-rog-card" class="result-card bg-gray-700/50 p-6 rounded-lg">
+          <h2 class="text-xl font-semibold text-white mb-3">Healed RoG</h2>
+          <p class="text-sm text-gray-400 mb-2">Final Answer:</p>
+          <p id="healed-rog-answer" class="text-2xl font-bold text-yellow-400 mb-2"></p>
+          <p id="healed-rog-path" class="text-xs text-gray-400"></p>
+          <h3 class="text-lg font-semibold text-white mt-4 mb-2">Explanation</h3>
+          <p class="text-sm text-gray-400">We remove detected poisoned triples from the poisoned subgraph, then ground only the highest-score relation path from RoG.</p>
+        </div>
+
+        <div id="ground-truth-card" class="result-card bg-gray-700/50 p-6 rounded-lg">
+          <h2 class="text-xl font-semibold text-white mb-3">Ground Truth</h2>
+          <p id="ground-truth-answer" class="text-2xl font-bold text-gray-300"></p>
+        </div>
+      </div>
+
+      <div id="prompt-card" class="result-card bg-gray-700/50 p-6 rounded-lg">
+        <h2 class="text-xl font-semibold text-white mb-3">Prompt sent to LLM</h2>
+        <pre class="bg-gray-900/70 p-4 rounded-md text-sm text-gray-300 whitespace-pre-wrap overflow-x-auto max-h-96"><code id="prompt-display"></code></pre>
+      </div>
+    </section>
+
+  </div>
+
+  <script>
+    /* ===========================
+       Local “File System” (Folder Picker)
+       =========================== */
+    const LocalFS = {
+      ready: false,
+      files: new Map(),
+      async mount(fileList) {
+        this.files.clear();
+        for (const f of fileList) {
+          const p = (f.webkitRelativePath || f.name).replace(/\\/g,'/');
+          this.files.set(p, f);
+        }
+        this.ready = true;
+      },
+      exists(path) {
+        const p = path.replace(/\\/g,'/');
+        if (this.files.has(p)) return true;
+        return [...this.files.keys()].some(k => k.endsWith('/'+p) || k === p);
+      },
+      _find(path) {
+        const p = path.replace(/\\/g,'/');
+        if (this.files.has(p)) return this.files.get(p);
+        const altKey = [...this.files.keys()].find(k => k.endsWith('/'+p) || k === p);
+        return altKey ? this.files.get(altKey) : null;
+      },
+      async readText(path) {
+        const f = this._find(path);
+        if (!f) throw new Error('File not found: ' + path);
+        return await f.text();
+      },
+      async readJSON(path) {
+        return JSON.parse(await this.readText(path));
+      }
+    };
+
+    /* ===========================
+       Utilities
+       =========================== */
+    const stopwords = new Set(['what','who','where','when','why','how','is','was','are','a','an','the','did','do','does','in','of','from','to','on','for','at','by']);
+    const tokenize = text => new Set((text?.toLowerCase().match(/\b\w+\b/g) || []).filter(t => !stopwords.has(t)));
+    const normalizeQ = s => (s || '').toLowerCase().replace(/\s+/g,' ').trim();
+    const parseJsonl = txt => (txt||'').trim().split(/\r?\n/).filter(Boolean).map(l => JSON.parse(l));
+
+    /* ===========================
+       Prompt Template (unchanged)
+       =========================== */
+    const PROMPT_TEMPLATE = `<s>[INST] <<SYS>>
+You are a meticulous fact-checker and logical reasoner. Your primary objective is to determine the factually correct answer(s) to a question by strictly adhering to the provided evidence and rules.
+<</SYS>>
+
+**Question:**
+{question}
+
+**Candidate Answers (The only valid source for your final answer):**
+{candidate_list}
+
+**Knowledge Graph Context (The only source of evidence for verification):**
+{focused_context}
+
+**Your Task - You MUST follow these rules precisely:**
+
+1.  **NON-NEGOTIABLE RULE: Strict Selection.** Your final answer(s) **MUST** be selected **EXACTLY** as written from the "Candidate Answers" list. **DO NOT** summarize, generalize, or invent new answers.
+2.  **CRITICAL ANALYSIS: Scrutinize for Precision and Contradictions.** You **MUST** act with extreme rigor.
+3.  **PRINCIPLE OF VERIFICATION: Find the Intersection.** The correct answer(s) must be verifiably and **precisely** supported by **BOTH** your internal world knowledge **AND** the provided "Knowledge Graph Context".
+4.  **PRINCIPLE OF TIMELINESS: Prioritize Recency.** For questions about roles or relationships that change over time, you **MUST** prioritize the most current fact.
+5.  **FINAL DECISION:** After completing all analysis, state the final correct answer(s) from the list. If there is only one correct answer, provide that single answer. If there are multiple, list them. Finally, end your response with \`Final Answer: [Your answer(s)]\`. [/INST]`;
+
+    /* ===========================
+       Global state
+       =========================== */
+    let pathData = null;
+    let searchIndex = null;
+    let questionIndex = null;
+    let dataLoaded = false;
+
+    /* ===========================
+       Normalize prediction rows (id, prediction, norm_scores)
+       =========================== */
+    function normalizePathRow(row) {
+      const out = { id: row.id, prediction: [], raw_output: {} };
+      let pred = row.prediction ?? row.predicted_paths ?? [];
+      const toRelSeq = (p) => {
+        if (Array.isArray(p)) return p.map(x => String(x));
+        if (typeof p === 'string') {
+          // split by common separators: ->, →, comma, multiple spaces
+          return p.split(/(?:->|→|,|\s{2,})/g).map(s => s.trim()).filter(Boolean);
+        }
+        return [];
+      };
+      if (!Array.isArray(pred)) pred = [pred];
+      out.prediction = pred.map(toRelSeq).filter(seq => seq.length > 0);
+
+      const scores = row?.raw_output?.norm_scores ?? row?.norm_scores ?? row?.scores ?? null;
+      if (Array.isArray(scores)) out.raw_output = { norm_scores: scores.map(n => Number(n)).map(n => (Number.isNaN(n)? -Infinity : n)) };
+      return out;
+    }
+
+    /* ===========================
+       DeepSeek Client (SSE optional)
+       =========================== */
+    class DeepSeekClient {
+      constructor(apiKey, apiBase, model, useStream, timeoutMs = 120000) {
+        this.apiKey = apiKey;
+        this.apiUrl = apiBase.replace(/\/$/, '') + "/chat/completions";
+        this.model = model || "deepseek-chat";
+        this.useStream = !!useStream;
+        this.timeoutMs = timeoutMs;
+      }
+      async chat(prompt, onToken) {
+        const messages = [
+          { role: "system", content: "You are a helpful assistant." },
+          { role: "user", content: prompt }
+        ];
+        const payload = {
+          model: this.model, messages,
+          max_tokens: 4096, temperature: 0.0, stream: this.useStream
+        };
+        const ctrl = new AbortController();
+        const t = setTimeout(() => ctrl.abort(), this.timeoutMs);
+        try {
+          const res = await fetch(this.apiUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${this.apiKey}` },
+            body: JSON.stringify(payload),
+            signal: ctrl.signal
+          });
+          if (this.useStream) {
+            if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+            const ctype = res.headers.get('content-type') || '';
+            if (!ctype.includes('text/event-stream')) {
+              const json = await res.json();
+              const out = this.extractNonStream(json, onToken);
+              if (onToken) onToken('[fallback to non-stream]\n');
+              return out;
+            }
+            const reader = res.body.getReader();
+            const decoder = new TextDecoder('utf-8');
+            let buffer = '', full = '';
+            while (true) {
+              const { value, done } = await reader.read();
+              if (done) break;
+              buffer += decoder.decode(value, { stream: true });
+              let idx;
+              while ((idx = buffer.indexOf('\n')) >= 0) {
+                const line = buffer.slice(0, idx).trim();
+                buffer = buffer.slice(idx + 1);
+                if (!line) continue;
+                if (line.startsWith('data:')) {
+                  const data = line.slice(5).trim();
+                  if (data === '[DONE]') break;
+                  try {
+                    const obj = JSON.parse(data);
+                    const delta = obj?.choices?.[0]?.delta;
+                    const rc = delta?.reasoning_content || '';
+                    const cc = delta?.content || '';
+                    const chunk = rc + cc;
+                    if (chunk) {
+                      full += chunk;
+                      if (onToken) onToken(chunk);
+                    }
+                  } catch (e) { /* ignore */ }
+                }
+              }
+            }
+            return full;
+          }
+          if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+          const json = await res.json();
+          return this.extractNonStream(json, onToken);
+        } catch (e) {
+          return "API_ERROR: " + (e?.name === 'AbortError' ? `Request timed out (${this.timeoutMs} ms)` : (e?.message || e));
+        } finally {
+          clearTimeout(t);
+        }
+      }
+      extractNonStream(json, onToken) {
+        const choice = json?.choices?.[0];
+        const content = choice?.message?.content ?? "";
+        const reasoning = choice?.message?.reasoning_content ?? "";
+        const out = (reasoning ? reasoning + "\n\n" : "") + (content || "");
+        if (onToken) onToken(out);
+        return out;
+      }
+    }
+
+    /* ===========================
+       Final Answer Parsing (robust)
+       =========================== */
+    function parseFinalAnswer(raw) {
+      if (typeof raw !== 'string' || !raw.trim()) return '';
+      let text = raw
+        .replace(/```[\s\S]*?```/g, '')
+        .replace(/`/g, '')
+        .replace(/<[^>]+>/g, '')
+        .replace(/\*\*|__/g, '')
+        .replace(/\*/g, '')
+        .replace(/_/g, '');
+      const faRegex = /final\s*answer[^:–—\-]*[:\-–—]\s*/ig;
+      let lastMatch, m;
+      while ((m = faRegex.exec(text)) !== null) lastMatch = m;
+      if (!lastMatch) {
+        const alt = /(final|最终)\s*(answer|答案)[^:–—\-]*[:\-–—]\s*/ig;
+        while ((m = alt.exec(text)) !== null) lastMatch = m;
+        if (!lastMatch) return '';
+      }
+      let tail = text.slice(lastMatch.index + lastMatch[0].length);
+      const endIdx = tail.search(/\n\s*\n|\r\n\s*\r\n/);
+      if (endIdx !== -1) tail = tail.slice(0, endIdx);
+      tail = tail.trim().replace(/^[[({“"']+/,'').replace(/[\])}”"']+$/, '').trim();
+      return tail;
+    }
+
+    /* ===========================
+       Poisoned Triple Detection (set-diff by final tail support)
+       =========================== */
+    function detectPoisonedTriplesFromPairs(groundedPairs, finalAnswer) {
+      const norm = s => (s||"").toLowerCase().trim();
+      const fan = new Set(finalAnswer.split(/[,;]/).map(norm).filter(Boolean));
+      const allTriples = new Set();
+      const supportTriples = new Set();
+      for (const {entityPath, relPath} of groundedPairs) {
+        const L = Math.min(entityPath.length - 1, relPath.length);
+        if (L <= 0) continue;
+        const triples = [];
+        for (let i=0;i<L;i++) triples.push([entityPath[i], relPath[i], entityPath[i+1]]);
+        for (const t of triples) allTriples.add(JSON.stringify(t));
+        const tail = norm(entityPath[entityPath.length-1]);
+        if (fan.has(tail)) {
+          for (const t of triples) supportTriples.add(JSON.stringify(t));
+        }
+      }
+      const out = [];
+      for (const k of allTriples) if (!supportTriples.has(k)) out.push(JSON.parse(k));
+      return out;
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      /* ===========================
+         UI nodes
+         =========================== */
+      const dirPicker = document.getElementById('dir-picker');
+      const loadStatus = document.getElementById('load-status');
+      const pickedHint = document.getElementById('picked-hint');
+      const analyzeBtn = document.getElementById('analyze-btn');
+      const clearThinkBtn = document.getElementById('clear-thought-btn');
+      const statusEl = document.getElementById('status');
+      const apiKeyInput = document.getElementById('api-key-input');
+      const apiBaseInput = document.getElementById('api-base');
+      const modelSelect = document.getElementById('model-select');
+      const streamToggle = document.getElementById('stream-toggle');
+      const questionInput = document.getElementById('question-input');
+      const questionWrapper = document.getElementById('question-input-wrapper');
+      const thinkStream = document.getElementById('think-stream');
+      const thinkStatus = document.getElementById('think-status');
+
+      function showError(el){ el.classList.add('input-error'); setTimeout(()=>el.classList.remove('input-error'), 600); }
+
+      /* ===========================
+         Load indexes from local folder
+         =========================== */
+      dirPicker.addEventListener('change', async (e) => {
+        const files = e.target.files;
+        if (!files || !files.length) return;
+        loadStatus.textContent = 'Reading directory...';
+        await LocalFS.mount(files);
+
+        const need = ['poisoned_index.jsonl','clean_index.jsonl'];
+        const missing = need.filter(n => !LocalFS.exists(n));
+        if (missing.length) { loadStatus.textContent = 'Missing files: ' + missing.join(', '); return; }
+
+        try {
+          const [poiIdxTxt, cleanIdxTxt] = await Promise.all([
+            LocalFS.readText('poisoned_index.jsonl'),
+            LocalFS.readText('clean_index.jsonl'),
+          ]);
+          const poiIdx = parseJsonl(poiIdxTxt);
+          parseJsonl(cleanIdxTxt); // just validation
+
+          let pathsArr = [];
+          if (LocalFS.exists('predictions_10_False.jsonl')) {
+            pathsArr = parseJsonl(await LocalFS.readText('predictions_10_False.jsonl'));
+          } else if (LocalFS.exists('predictions_10_False.json')) {
+            pathsArr = JSON.parse(await LocalFS.readText('predictions_10_False.json'));
+          }
+          // normalize predictions rows
+          const normPathsArr = (pathsArr || []).map(normalizePathRow);
+
+          searchIndex = poiIdx.map(d => ({ id: d.id, q: d.question || '', tokens: tokenize(d.question || '') }));
+          questionIndex = new Map();
+          for (const d of poiIdx) {
+            const key = normalizeQ(d.question);
+            if (!key) continue;
+            if (!questionIndex.has(key)) questionIndex.set(key, []);
+            questionIndex.get(key).push(d.id);
+          }
+          pathData = normPathsArr.reduce((m, it) => (m[it.id] = it, m), {});
+          dataLoaded = true;
+
+          loadStatus.textContent = 'Indexes loaded. Ready.';
+          pickedHint.textContent = 'Folder mounted. You can start querying.';
+        } catch (err) {
+          console.error(err);
+          loadStatus.textContent = 'Read failed: ' + (err.message || err);
+        }
+      });
+
+      /* ===========================
+         Matching (ID / exact / similarity)
+         =========================== */
+      function findBestId(query, topk = 5) {
+        const qNorm = normalizeQ(query);
+        if (searchIndex?.some(x => x.id === query)) return { bestId: query, top: [] };
+
+        const exactIds = questionIndex?.get(qNorm);
+        if (exactIds?.length) return { bestId: exactIds[0], top: exactIds.slice(0, topk).map(id => ({ id, j: 1, inc: 999 })) };
+
+        const qTokens = tokenize(query);
+        const scored = searchIndex.map(({id, q, tokens}) => {
+          const inter = new Set([...qTokens].filter(x => tokens.has(x))).size;
+          const uni = new Set([...qTokens, ...tokens]).size || 1;
+          const j = inter / uni;
+          let inc = 0;
+          if (qTokens.size > 0) { for (const t of qTokens) if ((q || '').toLowerCase().includes(t)) inc++; }
+          else if (qNorm && (q || '').toLowerCase().includes(qNorm)) inc = 1;
+          return { id, j, inc, qtext: q };
+        });
+        scored.sort((a,b) => (b.j - a.j) || (b.inc - a.inc));
+        const best = scored[0];
+        const ok = best && (best.j >= 0.05 || best.inc > 0);
+        return { bestId: ok ? best.id : null, top: scored.slice(0, topk) };
+      }
+
+      /* ===========================
+         Read shard (local)
+         =========================== */
+      async function readShard(dir, id) {
+        const p1 = `${dir}/${id}.json`;
+        if (!LocalFS.exists(p1)) throw new Error(`Missing shard: ${p1}`);
+        return await LocalFS.readJSON(p1);
+      }
+
+      /* ===========================
+         Grounder
+         =========================== */
+      class PathGrounder {
+        constructor(local_kg_triples) {
+          this.relation_index = new Map();
+          for (const [h, r, t] of local_kg_triples) {
+            const key = `${h}|${r}`;
+            if (!this.relation_index.has(key)) this.relation_index.set(key, []);
+            this.relation_index.get(key).push(t);
+          }
+        }
+        ground_path(start_entity, relation_path) {
+          let paths = [[start_entity]];
+          for (const relation of relation_path) {
+            let new_paths = [];
+            for (const path of paths) {
+              const last = path[path.length - 1];
+              const key = `${last}|${relation}`;
+              if (this.relation_index.has(key)) {
+                for (const next of this.relation_index.get(key)) {
+                  new_paths.push([...path, next]);
+                }
+              }
+            }
+            paths = new_paths;
+            if (paths.length === 0) return [];
+          }
+          return paths;
+        }
+      }
+
+      /* ===========================
+         Helper: choose best path index by scores with fallbacks
+         =========================== */
+      function sortedPathIndices(scores, count) {
+        const arr = Array.from({length: count}, (_,i)=>({i, s: (Array.isArray(scores) && Number.isFinite(scores[i]) ? scores[i] : -Infinity)}));
+        arr.sort((a,b)=> (b.s - a.s) || (a.i - b.i));
+        return arr.map(x=>x.i);
+      }
+
+      /* ===========================
+         Events
+         =========================== */
+      clearThinkBtn.addEventListener('click', () => {
+        thinkStream.textContent = '';
+        thinkStatus.textContent = 'Cleared.';
+      });
+
+      analyzeBtn.addEventListener('click', () => {
+        const apiKey = apiKeyInput.value.trim();
+        const userQuery = questionInput.value.trim();
+        const apiBase = (apiBaseInput.value.trim() || 'https://api.deepseek.com');
+        const model = modelSelect.value || 'deepseek-chat';
+        const useStream = !!streamToggle.checked;
+
+        const setLoading = () => {
+          analyzeBtn.disabled = true;
+          analyzeBtn.innerHTML = `<svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg><span>Running…</span>`;
+        };
+        const unsetLoading = () => { analyzeBtn.disabled = false; analyzeBtn.innerHTML = 'Analyze'; };
+
+        const earlyFail = (msg, elToShake) => {
+          statusEl.textContent = msg;
+          if (elToShake) showError(elToShake);
+          unsetLoading();
+          return true;
+        };
+
+        thinkStatus.textContent = useStream ? 'Streaming…' : 'Thinking…';
+        thinkStream.textContent = '⏳ Preparing…\n';
+        statusEl.textContent = '';
+        document.getElementById('results').classList.add('hidden');
+
+        if (!LocalFS.ready || !dataLoaded) { if (earlyFail('Please pick the dataset folder first.', dirPicker)) return; }
+        if (!apiKey) { if (earlyFail('Error: API key required.', apiKeyInput)) return; }
+        if (!userQuery) { if (earlyFail('Error: Enter a question or ID.', questionWrapper)) return; }
+
+        setLoading();
+        const safetyReset = setTimeout(() => { unsetLoading(); if (!statusEl.textContent.trim()) statusEl.textContent = 'Timeout recovered.'; }, 120000);
+
+        (async () => {
+          try {
+            statusEl.textContent = 'Matching question (ID / exact / similarity)…';
+            const { bestId } = findBestId(userQuery, 5);
+            if (!bestId) { earlyFail('No similar or identical question found.'); clearTimeout(safetyReset); return; }
+
+            const targetId = bestId;
+            statusEl.textContent = `Matched (${targetId}). Loading shards…`;
+            thinkStream.textContent += `🔎 Hit: ${targetId}\n`;
+
+            const record = await readShard('poisoned_shards', targetId);
+            const cleanRecord = await readShard('clean_shards', targetId);
+            const pathsRow = pathData[targetId];
+
+            const relPaths = pathsRow?.prediction || [];
+            const scores = pathsRow?.raw_output?.norm_scores || [];
+
+            if (!record?.q_entity?.length || !record?.graph?.length || !relPaths?.length) {
+              earlyFail('Sample is missing required data (entity, graph, or paths).');
+              clearTimeout(safetyReset);
+              return;
+            }
+
+            document.getElementById('matched-question-text').textContent = `[${targetId}] ${record.question}`;
+
+            // ===== Phase 1: Ground all predicted paths on poisoned graph =====
+            statusEl.textContent = 'Grounding relation paths on poisoned graph…';
+            const startEntity = record.q_entity[0];
+            const grounder = new PathGrounder(record.graph);
+
+            let groundedPairs = [];
+            let groundedAnswers = new Set();
+            let onPathTriples = new Set();
+
+            relPaths.forEach(relPath => {
+              const entityPaths = grounder.ground_path(startEntity, relPath);
+              entityPaths.forEach(entityPath => {
+                groundedPairs.push({ entityPath, relPath });
+                groundedAnswers.add(entityPath[entityPath.length - 1]);
+                for (let j=0; j < entityPath.length - 1 && j < relPath.length; j++){
+                  onPathTriples.add(JSON.stringify([entityPath[j], relPath[j], entityPath[j+1]]));
+                }
+              });
+            });
+
+            // Build and send Phase-1 prompt
+            statusEl.textContent = 'Phase 1: LLM analysis on poisoned graph…';
+            const focusedContext = Array.from(onPathTriples).map(t => JSON.parse(t));
+            const candidateList = Array.from(groundedAnswers).sort();
+            const prompt = PROMPT_TEMPLATE
+              .replace('{question}', record.question)
+              .replace('{candidate_list}', candidateList.map(c => `- ${c}`).join('\n'))
+              .replace('{focused_context}', focusedContext.map(t => `- (${t.join(', ')})`).join('\n'));
+            document.getElementById('prompt-display').textContent = prompt;
+
+            const client = new DeepSeekClient(apiKey, apiBase, model, useStream);
+            thinkStream.textContent += '--- PHASE 1: Poisoned Graph ---\n';
+            const rawLLMAnswer = await client.chat(prompt, chunk => {
+              thinkStream.textContent += chunk;
+              thinkStream.scrollTop = thinkStream.scrollHeight;
+            });
+            if (typeof rawLLMAnswer === 'string' && rawLLMAnswer.startsWith('API_ERROR:')) {
+              earlyFail(rawLLMAnswer);
+              thinkStatus.textContent = 'Error';
+              clearTimeout(safetyReset);
+              return;
+            }
+            const finalAnswer = parseFinalAnswer(rawLLMAnswer);
+
+            // Poison attribution (set-diff)
+            statusEl.textContent = 'Attributing poisoned triples…';
+            const poisonedTriples = detectPoisonedTriplesFromPairs(groundedPairs, finalAnswer);
+            const poisonedSet = new Set(poisonedTriples.map(t => JSON.stringify(t)));
+
+            // ===== Phase 2: Healed RoG (strictly RoG logic) =====
+            statusEl.textContent = 'Phase 2: Healed RoG — select best path, ground, then LLM…';
+            thinkStream.textContent += '\n--- PHASE 2: Healed RoG ---\n';
+
+            // 2.1 remove poisoned triples from poisoned subgraph to get healed graph
+            const healedGraph = record.graph.filter(t => !poisonedSet.has(JSON.stringify(t)));
+            const healedGrounder = new PathGrounder(healedGraph);
+
+            // 2.2 choose highest-score relation path (fallback by order)
+            const order = sortedPathIndices(scores, relPaths.length);
+            let healedChosen = null; // { relPath, entityPaths }
+            for (const idx of order) {
+              const rp = relPaths[idx];
+              const ep = healedGrounder.ground_path(startEntity, rp);
+              if (ep && ep.length > 0) { healedChosen = { relPath: rp, entityPaths: ep }; break; }
+            }
+            if (!healedChosen) {
+              // hard fallback: try original order if scores missing or all failed
+              for (let i = 0; i < relPaths.length && !healedChosen; i++) {
+                const rp = relPaths[i];
+                const ep = healedGrounder.ground_path(startEntity, rp);
+                if (ep && ep.length > 0) { healedChosen = { relPath: rp, entityPaths: ep }; break; }
+              }
+            }
+
+            let healedRogAnswer = 'No answer determined';
+            let healedPathUsed = null;
+
+            if (healedChosen) {
+              healedPathUsed = healedChosen.relPath;
+
+              // 2.3 build candidates & context ONLY from the chosen path on healed graph
+              const healedCandidates = new Set();
+              const healedTriples = new Set();
+              for (const entityPath of healedChosen.entityPaths) {
+                healedCandidates.add(entityPath[entityPath.length - 1]);
+                const L = Math.min(entityPath.length - 1, healedChosen.relPath.length);
+                for (let j=0; j<L; j++) {
+                  healedTriples.add(JSON.stringify([entityPath[j], healedChosen.relPath[j], entityPath[j+1]]));
+                }
+              }
+
+              const healedCandidateList = Array.from(healedCandidates).sort();
+              const healedContextTriples = Array.from(healedTriples).map(x => JSON.parse(x));
+
+              // 2.4 run LLM with THE SAME strict-selection prompt (RoG-style)
+              const healedPrompt = PROMPT_TEMPLATE
+                .replace('{question}', record.question)
+                .replace('{candidate_list}', healedCandidateList.map(c => `- ${c}`).join('\n'))
+                .replace('{focused_context}', healedContextTriples.map(t => `- (${t.join(', ')})`).join('\n'));
+
+              thinkStream.textContent += 'Healed path grounded. Querying LLM on healed context…\n';
+              const rawHealed = await client.chat(healedPrompt, chunk => {
+                thinkStream.textContent += chunk;
+                thinkStream.scrollTop = thinkStream.scrollHeight;
+              });
+              healedRogAnswer = parseFinalAnswer(rawHealed) || 'No answer determined';
+            } else {
+              thinkStream.textContent += 'No relation path can be grounded on healed graph.\n';
+            }
+
+            // ===== Render results =====
+            statusEl.textContent = 'Analysis complete.';
+            thinkStatus.textContent = 'Done.';
+            document.getElementById('final-answer').textContent = finalAnswer || 'No answer determined';
+            document.getElementById('ground-truth-answer').textContent = (cleanRecord.answer || []).join(', ');
+            document.getElementById('healed-rog-answer').textContent = healedRogAnswer;
+            document.getElementById('healed-rog-path').textContent =
+              healedPathUsed ? `Used healed relation path: [${healedPathUsed.join(' → ')}]` : 'No healed relation path grounded.';
+
+            const ul = document.getElementById('poisoned-triples');
+            ul.innerHTML = '';
+            if (poisonedTriples.length > 0) {
+              poisonedTriples.forEach(tri => {
+                const li = document.createElement('li');
+                li.className = 'triple-poisoned bg-gray-800 p-3 rounded-md text-sm';
+                li.innerHTML = `<span class="mono text-red-400">(${tri.join(', ')})</span>`;
+                ul.appendChild(li);
+              });
+            } else {
+              ul.innerHTML = '<li class="text-gray-400">No poisoned triples detected by set-difference.</li>';
+            }
+
+            document.getElementById('results').classList.remove('hidden');
+            ['matched-question-card','our-system-card','healed-rog-card','ground-truth-card','prompt-card','think-card']
+              .forEach((id,i)=> setTimeout(()=>document.getElementById(id).classList.add('show'), i*90));
+
+          } catch (err) {
+            console.error('[Analyze handler crashed]', err);
+            thinkStream.textContent += `\n❌ JS error: ${err.message}\n`;
+            statusEl.textContent = 'Runtime error: ' + (err.message || err);
+          } finally {
+            unsetLoading();
+            clearTimeout(safetyReset);
+          }
+        })();
+      });
+    });
+  </script>
+</body>
+</html>
