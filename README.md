@@ -19,4 +19,3 @@ System Features
 	• The entire framework is strictly model-agnostic, auditable, and easily compatible with existing KGQA stacks.
 	• It effectively recovers systemic reliability under data corruption while providing detailed interactive inspection and high reproducibility.
 	• The architecture includes an end-to-end interactive demonstrator that exposes internal prompts, text streams, and intermediate artifacts.
-<img width="1110" height="1040" alt="image" src="https://github.com/user-attachments/assets/bd48f59c-6d4c-4af3-9117-d1e9d6076970" />
